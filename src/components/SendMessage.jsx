@@ -1,102 +1,122 @@
 import React, { useState } from "react";
 import { auth, db } from "../firebase";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import useTypingIndicator from "./useTypingIndicator";
 
-const SendMessage = ({ scroll }) => {
+const SendMessage = ({ scroll, onTyping, onStopTyping }) => {
   const [message, setMessage] = useState("");
-  const { handleTyping, stopTyping } = useTypingIndicator();
+  const [isSending, setIsSending] = useState(false);
 
   const sendMessage = async (event) => {
     event.preventDefault();
-    if (message.trim() === "") {
-      alert("Enter valid message");
-      return;
+    if (!message.trim() || isSending) return;
+
+    setIsSending(true);
+    
+    // Stop typing indicator
+    if (onStopTyping) {
+      onStopTyping();
     }
 
-    stopTyping();
+    const messageToSend = message.trim();
+    setMessage(""); // Clear input immediately for better UX
 
-    const { uid, displayName, photoURL } = auth.currentUser;
-    await addDoc(collection(db, "messages"), {
-      text: message,
-      name: displayName,
-      avatar: photoURL,
-      createdAt: serverTimestamp(),
-      uid,
-    });
-    setMessage("");
-    scroll.current.scrollIntoView({ behavior: "smooth" });
+    try {
+      const { uid, displayName, photoURL } = auth.currentUser;
+      
+      await addDoc(collection(db, "messages"), {
+        text: messageToSend,
+        name: displayName || "Anonymous",
+        avatar: photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${displayName || uid}`,
+        createdAt: serverTimestamp(),
+        uid,
+        timestamp: Date.now() // For immediate sorting while serverTimestamp is null
+      });
+
+      // Scroll to bottom after sending
+      setTimeout(() => {
+        scroll.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+      
+    } catch (error) {
+      console.error("Error sending message:", error);
+      // Restore message if sending failed
+      setMessage(messageToSend);
+      alert("Failed to send message. Please try again.");
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleInputChange = (e) => {
-    setMessage(e.target.value);
+    const value = e.target.value;
+    setMessage(value);
     
-    if (e.target.value.trim()) {
-      handleTyping();
-    } else {
-      stopTyping();
+    // Trigger typing indicator when user types
+    if (value.trim() && onTyping) {
+      onTyping();
+    } else if (!value.trim() && onStopTyping) {
+      onStopTyping();
     }
   };
 
-  const handleKeyDown = (e) => {
-    if (e.key === 'Backspace' && !message.trim()) {
-      stopTyping();
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(e);
     }
   };
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3">
-      <form onSubmit={sendMessage} className="flex items-center space-x-3">
-        <label htmlFor="messageInput" hidden>
-          Enter Message
-        </label>
-        
+      <form onSubmit={sendMessage} className="flex items-end space-x-3">
+        {/* Message Input */}
         <div className="flex-1 relative">
-          <input
-            id="messageInput"
-            name="messageInput"
-            type="text"
-            className="w-full px-4 py-3 pr-12 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent placeholder-gray-500"
-            placeholder="Type a message..."
+          <textarea
             value={message}
             onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            onBlur={stopTyping}
+            onKeyPress={handleKeyPress}
+            className="w-full px-4 py-3 border border-gray-300 rounded-full resize-none focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent max-h-32"
+            placeholder="Type a message..."
+            rows="1"
+            style={{
+              minHeight: '48px',
+              maxHeight: '120px',
+              overflowY: 'auto'
+            }}
+            disabled={isSending}
           />
           
-          <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-1">
-            <button
-              type="button"
-              className="text-gray-400 hover:text-gray-600 focus:outline-none"
-            >
-              📎
-            </button>
-            <button
-              type="button"
-              className="text-gray-400 hover:text-gray-600 focus:outline-none"
-            >
-              😊
-            </button>
-          </div>
+          {/* Emoji Button */}
+          <button
+            type="button"
+            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+            onClick={() => {
+              // You can add emoji picker functionality here
+              setMessage(prev => prev + '😊');
+            }}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
         </div>
-        
+
+        {/* Send Button */}
         <button
           type="submit"
-          disabled={!message.trim()}
-          className={`p-3 rounded-full transition-colors duration-200 ${
-            message.trim()
-              ? 'bg-green-500 hover:bg-green-600 text-white'
-              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-          }`}
+          disabled={!message.trim() || isSending}
+          className="w-12 h-12 bg-green-500 hover:bg-green-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-full flex items-center justify-center transition-colors flex-shrink-0"
         >
-          <svg
-            className="w-5 h-5"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-          </svg>
+          {isSending ? (
+            <svg className="animate-spin w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
+          )}
         </button>
       </form>
     </div>
@@ -104,6 +124,120 @@ const SendMessage = ({ scroll }) => {
 };
 
 export default SendMessage;
+
+
+
+// import React, { useState } from "react";
+// import { auth, db } from "../firebase";
+// import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+// import useTypingIndicator from "./useTypingIndicator";
+
+// const SendMessage = ({ scroll }) => {
+//   const [message, setMessage] = useState("");
+//   const { handleTyping, stopTyping } = useTypingIndicator();
+
+//   const sendMessage = async (event) => {
+//     event.preventDefault();
+//     if (message.trim() === "") {
+//       alert("Enter valid message");
+//       return;
+//     }
+
+//     stopTyping();
+
+//     const { uid, displayName, photoURL } = auth.currentUser;
+//     await addDoc(collection(db, "messages"), {
+//       text: message,
+//       name: displayName,
+//       avatar: photoURL,
+//       createdAt: serverTimestamp(),
+//       uid,
+//     });
+//     setMessage("");
+//     scroll.current.scrollIntoView({ behavior: "smooth" });
+//   };
+
+//   const handleInputChange = (e) => {
+//     setMessage(e.target.value);
+    
+//     if (e.target.value.trim()) {
+//       handleTyping();
+//     } else {
+//       stopTyping();
+//     }
+//   };
+
+//   const handleKeyDown = (e) => {
+//     if (e.key === 'Backspace' && !message.trim()) {
+//       stopTyping();
+//     }
+//   };
+
+//   return (
+//     <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-3">
+//       <form onSubmit={sendMessage} className="flex items-center space-x-3">
+//         <label htmlFor="messageInput" hidden>
+//           Enter Message
+//         </label>
+        
+//         <div className="flex-1 relative">
+//           <input
+//             id="messageInput"
+//             name="messageInput"
+//             type="text"
+//             className="w-full px-4 py-3 pr-12 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent placeholder-gray-500"
+//             placeholder="Type a message..."
+//             value={message}
+//             onChange={handleInputChange}
+//             onKeyDown={handleKeyDown}
+//             onBlur={stopTyping}
+//           />
+          
+//           <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-1">
+//             <button
+//               type="button"
+//               className="text-gray-400 hover:text-gray-600 focus:outline-none"
+//             >
+//               📎
+//             </button>
+//             <button
+//               type="button"
+//               className="text-gray-400 hover:text-gray-600 focus:outline-none"
+//             >
+//               😊
+//             </button>
+//           </div>
+//         </div>
+        
+//         <button
+//           type="submit"
+//           disabled={!message.trim()}
+//           className={`p-3 rounded-full transition-colors duration-200 ${
+//             message.trim()
+//               ? 'bg-green-500 hover:bg-green-600 text-white'
+//               : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+//           }`}
+//         >
+//           <svg
+//             className="w-5 h-5"
+//             fill="currentColor"
+//             viewBox="0 0 20 20"
+//             xmlns="http://www.w3.org/2000/svg"
+//           >
+//             <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+//           </svg>
+//         </button>
+//       </form>
+//     </div>
+//   );
+// };
+
+// export default SendMessage;
+
+
+
+
+
 // import React, { useState } from "react";
 // import { auth, db } from "../firebase";
 // import { addDoc, collection, serverTimestamp } from "firebase/firestore";

@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/* Add this to your main chat container */
+.chat-container {
+  background: #f0f2f5; /* WhatsApp-like background */
+  padding-bottom: 80px; /* Space for fixed input */
+  min-height: 100vh;
+}
